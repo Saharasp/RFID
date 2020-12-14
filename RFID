@@ -1,0 +1,301 @@
+#include <Wire.h>                          // librería de comunicación por I2C
+#include <LCD.h>                          // librería para funciones de LCD
+#include <LiquidCrystal_I2C.h>    // librería para LCD por I2C
+#include <SPI.h>                           // incluye librería bus SPI
+#include <MFRC522.h>                // incluye librería específica para MFRC522
+
+#define RST_PIN        7             // Configuración del pin 7 como reset
+#define RST_PIN2       8            // Configuración del pin 7 como reset
+#define SS_1_PIN        9          // constante para referenciar pin 9 de slave select
+#define SS_2_PIN     10          // constante para referenciar pin de slave select 
+
+#define NR_OF_READERS   2   //definimos una variable con el valor de 2
+
+byte ssPins[] = {SS_1_PIN, SS_2_PIN}; // se configura los puertos del Select slave
+
+LiquidCrystal_I2C lcd (0x27, 2, 1, 0, 4, 5, 6, 7); // DIR, E, RW, RS, D4, D5, D6, D7
+MFRC522 mfrc522[NR_OF_READERS];   // crea un objeto MFRC522 
+
+byte LecturaUID[7];      //Creamos una variable de 7 bytes
+byte Usuario1[7]= {0x04, 0x3F, 0x5E, 0xD2, 0x28, 0x67, 0x80};    // UID Tren FE-07
+byte Usuario2[7]= {0x04, 0x3B, 0x5E, 0xD2, 0x28, 0x67, 0x80};    // UID Tren FM-86
+byte Usuario3[7]= {0x04, 0x35, 0x5E, 0xD2, 0x28, 0x67, 0x80};    // UID Tren FM-95A
+// Estos UID son los obtenidos por el programa anterior y serán utilizados en este código para asignarlos a un modelo de tren y numero de motriz.
+void setup() //función que se ejecuta una sola vez y donde se realiza la inicialización de  los puertos. 
+ {
+
+  Serial.begin(9600); // Inicia la comunicación serial con la computadora y el otro arduino
+  while (!Serial);    // No hace nada si no se abre ningún puerto serie 
+  SPI.begin();        // inicia el bus SPI 
+  for (uint8_t reader = 0; reader < NR_OF_READERS; reader++) 
+  {
+    mfrc522[reader].PCD_Init(ssPins[reader], RST_PIN); // Inicia la configuración de cada TAG MFRC522
+  }
+  lcd.setBacklightPin(3,POSITIVE);  // puerto P3 de PCF8574 como positivo
+  lcd.setBacklight(HIGH);   // habilita iluminación posterior de LCD
+  lcd.begin(16, 2);     // 16 columnas por 2 líneas para LCD 16x2
+  lcd.clear();      // limpia pantalla
+  lcd.setCursor(0, 0); //coloca el cursor en las coordenadas 0,0
+  lcd.print("Listo");    // Muestra texto “Listo”, dando a entender que todo se configuro correctamente.
+}
+
+
+void loop()    //función de bucle, el cual siempre se ejecutara infinitas veces.
+{
+
+  for (uint8_t reader = 0; reader < NR_OF_READERS; reader++) // busca nuevas tarjetas
+  {
+   
+    if (mfrc522[reader].PICC_IsNewCardPresent() && mfrc522[reader].PICC_ReadCardSerial()) 
+    {
+      dump_byte_array(mfrc522[reader].uid.uidByte, mfrc522[reader].uid.size);
+      Serial.println(); // función para leer el numero de serie del TAG
+     if(comparaUID(LecturaUID, Usuario1, mfrc522[reader].uid.size))    //llama a la función comparaUID y compara la lectura en LecturaUD con Usuario1, devuelve true si las dos son iguales y false si no
+     {
+         Serial.write("7");       // manda un 7 por el puerto serie 
+         lcd.clear();               //limpiamos la pantalla de la LCD
+         lcd.setCursor(0, 0);   //ponemos el cursor de la LCD en las coordenadas 0,0 
+         lcd.print("Tren FE-07"); //mostramos en la LCD el Mensaje “Tren FE-07”
+         lcd.setCursor(0, 1);      //movemos el cursor a la coordenada 0,1
+         lcd.print("Motrices:68-67"); //mostramos en LCD el mensaje “Motrices:68-67”   
+      }
+      else 
+       if(comparaUID(LecturaUID, Usuario2, mfrc522[reader].uid.size)) //llama a la función comparaUID y compara la lectura en LecturaUD con Usuario2, devuelve true si las dos son iguales y false si no
+       {
+           Serial.write("6"); // si retorna verdadero manda un 6 por el puerto serie
+           lcd.clear();          //limpiamos la pantalla de la LCD
+           lcd.setCursor(0, 0);    // ubica cursor en columna 0 y línea 0
+           lcd.print("Tren FM-86");  // escribe el texto “Tren FM-86”
+           lcd.setCursor(0, 1);        // ubica cursor en columna 0 y línea 1
+           lcd.print("Motrices:83-84");  // escribe el texto “Motrices:83-84”
+       }
+       else
+       if (comparaUID(LecturaUID, Usuario3, mfrc522[reader].uid.size)) //llama a la función comparaUID y compara la lectura en LecturaUD con Usuario2, devuelve true si las dos son iguales y false si no
+       {
+           Serial.write("9"); // si retorna verdadero manda un 6 por el puerto serie
+           lcd.clear();          //limpiamos la pantalla de la LCD
+           lcd.setCursor(0, 0);    // ubica cursor en columna 0 y línea 0
+           lcd.print("Tren FM-95A");   // escribe el texto “Tren FM-95A”
+           lcd.setCursor(0, 1);            // ubica cursor en columna 0 y línea 1
+           lcd.print("Motrices:64-65"); // escribe el texto “Motrices:64-65”
+       }
+       else
+        {
+           lcd.clear();                //limpiamos la pantalla de la LCD  
+           lcd.setCursor(0, 0);  // ubica cursor en columna 0 y línea 0
+           lcd.print("Tren no");  // escribe el texto “Tren no”
+           lcd.setCursor(0, 1);  // ubica cursor en columna 0 y línea 1
+           lcd.print("identificado."); // escribe el texto “identificado”
+        }    
+     mfrc522[reader].PICC_HaltA();  //Detiene comunicación con tarjeta
+    } 
+  } 
+}
+
+/**
+ * Rutina auxiliar para volcar una matriz de bytes como valores hexadecimales en Serial. */
+void dump_byte_array(byte *buffer, byte bufferSize) 
+{
+     for (byte i = 0; i < bufferSize; i++) 
+    {
+          LecturaUID[i]=buffer[i];
+     }
+}
+
+boolean comparaUID(byte lectura[],byte usuario[], byte bufferSize) // funcion comparaUID
+{
+  for (byte i=0; i < bufferSize; i++) // bucle recorre de a un byte por vez el UID
+ {    
+  	if(lectura[i] != usuario[i])        // si byte de UID leído es distinto a usuario
+         return(false);                         // retorna falso
+  }
+  return(true);                               // si los 4 bytes coinciden retorna verdadero
+}
+ 
+El código del segundo Arduino, el cual encender a los LED’s de acuerdo con lo que recibe por el puerto serie 
+
+#include <Adafruit_NeoPixel.h>
+#ifdef _AVR_
+#include <avr/power.h> 
+#endif
+int pin         =  6; 
+int numPixels   = 192; 
+
+int pixelFormat = NEO_GRB + NEO_KHZ800;
+Adafruit_NeoPixel *pixels; 
+void setup() 
+{
+  #if defined(_AVR_ATtiny85_) && (F_CPU == 16000000)
+  clock_prescale_set(clock_div_1);
+  #endif
+  pixels = new Adafruit_NeoPixel(numPixels, pin, pixelFormat);
+  pixels->begin(); 
+  pixels->clear();
+  Serial.begin(9600);
+  pinMode(4, INPUT);
+  pinMode(5, INPUT);
+  for(int i=0; i<64; i++) 
+       {
+        pixels->setPixelColor(i, pixels->Color(0, 0, 0));
+        pixels->show(); 
+       }
+
+}
+
+void loop() 
+{
+  char dato= Serial.read();
+  //Serial.print(dato);
+  pixels->setBrightness(25);
+  pixels->clear(); // Set all pixel colors to 'off'
+  switch(dato)
+  {
+    case '7':
+      while(digitalRead(4) == LOW)
+      {
+        LEDON(0, 3, 6, 65, 68, 71, 131, 134, 210, 105, 30);
+        delay(500);
+        LEDOFF(0, 3, 6, 65, 68, 71, 131, 134);
+        delay(500);
+      }
+    LEDON(0, 3, 6, 65, 68, 71, 131, 134, 210, 105, 30);
+    break;
+    case '6':
+      while(digitalRead(4) == LOW)
+      {
+        LEDON(0, 3, 6, 65, 68, 71, 131, 134, 255, 255, 255);
+        delay(500);
+        LEDOFF(0, 3, 6, 65, 68, 71, 131, 134);
+        delay(500);
+      }
+    LEDON(0, 3, 6, 65, 68, 71, 131, 134, 255, 255, 255);
+    break;
+    case '9':
+      while(digitalRead(4) == LOW)
+      {
+         LEDON(0, 3, 6, 65, 68, 71, 131, 134, 0, 0, 255);
+         delay(500);
+         LEDOFF(0, 3, 6, 65, 68, 71, 131, 134);
+         delay(500);
+      }
+    LEDON(0, 3, 6, 65, 68, 71, 131, 134, 0, 0, 255);
+    break;
+    default:
+    break;
+  }
+  if(digitalRead(5) == HIGH)
+  {
+      for(int i=0; i<64; i++) 
+       {
+        pixels->setPixelColor(i, pixels->Color(0, 0, 0));
+        pixels->show(); 
+       }
+  }
+}
+
+void LEDON(int uno, int dos, int tres, int cuatro, int cinco, int seis, int siete, int ocho, int R, int G, int B)
+{
+       
+       for(int i=0; i<8; i++) 
+       {
+        
+        pixels->setPixelColor(uno, pixels->Color(R, G, B));
+        pixels->setPixelColor(dos, pixels->Color(R, G, B));
+        pixels->setPixelColor(tres, pixels->Color(R, G, B));
+        pixels->setPixelColor(cuatro, pixels->Color(R, G, B));
+        pixels->setPixelColor(cinco, pixels->Color(R, G, B));
+        pixels->setPixelColor(seis, pixels->Color(R, G, B));
+        pixels->setPixelColor(siete, pixels->Color(R, G, B));
+        pixels->setPixelColor(ocho, pixels->Color(R, G, B));
+        pixels->show(); 
+        uno=uno+8;
+        dos=dos+8;
+        tres=tres+8;
+        cuatro=cuatro+8;
+        cinco=cinco+8;
+        seis= seis+8;
+        siete= siete+8;
+        ocho= ocho+8;
+       }
+}
+void LEDOFF(int uno, int dos, int tres, int cuatro, int cinco, int seis, int siete, int ocho)
+{
+       
+       for(int i=0; i<8; i++) 
+       {
+        pixels->setPixelColor(uno, pixels->Color(0, 0, 0));
+        pixels->setPixelColor(dos, pixels->Color(0, 0, 0));
+        pixels->setPixelColor(tres, pixels->Color(0, 0, 0));
+        pixels->setPixelColor(cuatro, pixels->Color(0, 0, 0));
+        pixels->setPixelColor(cinco, pixels->Color(0, 0, 0));
+        pixels->setPixelColor(seis, pixels->Color(0, 0, 0));
+        pixels->setPixelColor(siete, pixels->Color(0, 0, 0));
+        pixels->setPixelColor(ocho, pixels->Color(0, 0, 0));
+        pixels->show(); 
+        uno=uno+8;
+        dos=dos+8;
+        tres=tres+8;
+        cuatro=cuatro+8;
+        cinco=cinco+8;
+        seis= seis+8;
+        siete= siete+8;
+        ocho= ocho+8;
+       }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#include <SPI.h>      // incluye librería bus SPI
+#include <MFRC522.h>      // incluye librería específica para MFRC522
+
+#define RST_PIN  9      // constante para referenciar pin de reset
+#define SS_PIN  10      // constante para referenciar pin de slave select
+
+MFRC522 mfrc522(SS_PIN, RST_PIN); // crea objeto mfrc522 enviando pines de slave select y reset
+
+void setup() 
+{
+  Serial.begin(9600);     // inicializa comunicación por monitor serie a 9600 bps
+  SPI.begin();        // inicializa bus SPI
+  mfrc522.PCD_Init();     // inicializa modulo lector
+}
+
+void loop() 
+{
+  if ( ! mfrc522.PICC_IsNewCardPresent()) // si no hay una tarjeta presente
+    return;         // retorna al loop esperando por una tarjeta
+  
+  if ( ! mfrc522.PICC_ReadCardSerial())   // si no puede obtener datos de la tarjeta
+    return;         // retorna al loop esperando por otra tarjeta
+    
+  Serial.print("UID:");       // muestra texto UID:
+  for (byte i = 0; i < mfrc522.uid.size; i++)   
+ {                                                         // bucle recorre de a un byte por vez el UID
+    if (mfrc522.uid.uidByte[i] < 0x10) // si el byte leido es menor a 0x10
+    {   
+      Serial.print(" 0");     // imprime espacio en blanco y numero cero
+      }
+      else
+     {         // sino
+      Serial.print(" ");      // imprime un espacio en blanco
+      }
+    Serial.print(mfrc522.uid.uidByte[i], HEX);  // imprime el byte del UID leído en hexadecimal  
+  } 
+  Serial.println();       // nueva linea
+  mfrc522.PICC_HaltA();                   // detiene comunicación con tarjeta
+}
+
+
+
